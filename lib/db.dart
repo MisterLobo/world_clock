@@ -9,7 +9,7 @@ Future<Database> initDb() async {
     join(await getDatabasesPath(), 'clocks.db'),
     onCreate: (db, version) {
       return db.execute(
-        'CREATE TABLE IF NOT EXISTS clocks(id INTEGER PRIMARY KEY, name TEXT)',
+        'CREATE TABLE iF NOT EXISTS clocks (location TEXT NOT NULL UNIQUE, PRIMARY KEY("location"));',
       );
     },
     version: 1,
