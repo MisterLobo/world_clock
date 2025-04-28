@@ -1,13 +1,15 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/timezone.dart';
-import 'package:world_clock/new_clock.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:flutter_slidable/flutter_slidable.dart';
+
+import 'models/clock.dart';
+import 'my_clock.dart';
+import 'search.dart';
 
 void main() {
   tz.initializeTimeZones();
@@ -38,10 +40,12 @@ class MyApp extends StatelessWidget {
         //
         // This works for code too, not just values: Most code changes can be
         // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: const ColorScheme.dark(),
         useMaterial3: true,
       ),
       home: const MyHomePage(title: 'World Clock'),
+      debugShowCheckedModeBanner: false,
+      darkTheme: ThemeData.dark(useMaterial3: true),
     );
   }
 }
@@ -70,9 +74,9 @@ class _MyHomePageState extends State<MyHomePage> {
   Timer? timer;
   int seconds = 0;
   DateTime nowdt = DateTime.now();
-  String _currentDate = '';
-  String currentTime = '';
-  final List<String> _zones = [];
+  late String currentDate = '';
+  late String currentTime = '';
+  final List<String> zones = [];
 
   @override
   void initState() {
@@ -82,8 +86,8 @@ class _MyHomePageState extends State<MyHomePage> {
     timer = Timer.periodic(const Duration(seconds: 1), (t) {
       setState(() {
         nowdt = DateTime.now();
-        _currentDate = DateFormat.yMd().format(nowdt);
-        currentTime = DateFormat.jm().format(nowdt);
+        currentTime = DateFormat.Hms().format(nowdt);
+        currentDate = DateFormat.MMMMEEEEd().format(nowdt);
       });
     });
   }
@@ -95,35 +99,22 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void getLocalTZ() {
-    Map<String, Location> locations = timeZoneDatabase.locations;
-    FlutterTimezone.getLocalTimezone().then((value) {
-      currentTimezone = value;
-      _zones.add(value);
-      _zones.add(locations.keys.elementAt(18));
-      _zones.add(locations.keys.elementAt(118));
-      _zones.add(locations.keys.elementAt(58));
-      _zones.add(locations.keys.elementAt(66));
-    });
+    FlutterTimezone
+      .getLocalTimezone()
+      .then((value) {
+        currentTimezone = value;
+        return getClocks();
+      })
+      .then((clocks) {
+        for (var clock in clocks) {
+          final clk = Clock(location: clock.values.first);
+          zones.add(clk.location);
+        }
+      });
   }
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final Color draggaableItemColor = colorScheme.secondary;
-    Widget proxyDecorator(Widget child, int index, Animation<double> animation) {
-      return AnimatedBuilder(
-        animation: animation,
-        builder: (BuildContext context, Widget? child) {
-          final double animValue = Curves.easeInOut.transform(animation.value);
-          final double elevation = lerpDouble(0, 6, animValue)!;
-          return Material(
-            elevation: elevation,
-            shadowColor: draggaableItemColor,
-            child: child,
-          );
-        }
-      );
-    }
     // This method is rerun every time setState is called, for instance as done
     // by the _incrementCounter method above.
     //
@@ -148,53 +139,63 @@ class _MyHomePageState extends State<MyHomePage> {
               decoration: BoxDecoration(color: Colors.blue),
               child: Text('My Clocks'),
             ),
-            ..._zones.map((zone) => ListTile(
+            ...zones.map((zone) => ListTile(
               title: Text(zone),
               onTap: () {},
             )),
-            /* ListView.builder(
-              itemCount: _zones.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(_zones.elementAt(index)),
-                  onTap: () {},
-                );
-              },
-            ), */
           ],
         ),
       ),
-      body: ReorderableListView.builder(
-        proxyDecorator: proxyDecorator,
-        onReorder: (oldIndex, newIndex) {
-          debugPrint('$oldIndex, $newIndex');
-          setState(() {
-            if (oldIndex < newIndex) {
-              newIndex -= 1;
-            }
-            final String zone = _zones.removeAt(oldIndex);
-            _zones.insert(newIndex, zone);
-          });
-        },
-        itemCount: _zones.length,
-        itemBuilder: (context, index) => Slidable(
-          key: ValueKey(index),
-          startActionPane: ActionPane(
-            motion: const ScrollMotion(),
-            children: [
-              SlidableAction(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.red,
-                icon: Icons.delete,
-                onPressed: (BuildContext context) {},
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(15.0),
+            child: Center(
+              child: Column(
+                children: [
+                  Text(
+                    currentTime,
+                    style: const TextStyle(fontSize: 48),
+                  ),
+                  Text(currentDate),
+                  Text(
+                    'Current: $currentTimezone',
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-          child: ClockListItem(
-            timezone: _zones.elementAt(index),
-            currentTimezone: currentTimezone,
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(15.0),
+              shrinkWrap: true,
+              itemCount: zones.length,
+              itemBuilder: (context, index) => Slidable(
+                key: ValueKey(index),
+                startActionPane: ActionPane(
+                  motion: const ScrollMotion(),
+                  children: [
+                    SlidableAction(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.red,
+                      icon: Icons.delete,
+                      onPressed: (BuildContext context) {
+                        final clock = zones.elementAt(index);
+                        zones.remove(clock);
+                        removeClock(clock);
+                      },
+                    ),
+                  ],
+                ),
+                child: ClockListItem(
+                  timezone: zones.elementAt(index),
+                  currentTimezone: currentTimezone,
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -209,13 +210,14 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _navigateAndAddSelection(BuildContext context) async {
     final result = await showSearch(
       context: context, 
-      delegate: LocationSearchDelegate(currentTimezone, _zones),
+      delegate: LocationSearchDelegate(currentTimezone, zones),
     );
 
     if (!context.mounted) return;
 
     if (result != null) {
-      _zones.add(result.toString());
+      zones.add(result.toString());
+      insertClock(Clock(location: result.toString()));
     }
   }
 }
